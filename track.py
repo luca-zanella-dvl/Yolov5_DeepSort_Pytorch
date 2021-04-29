@@ -8,6 +8,7 @@ from yolov5.utils.torch_utils import select_device, time_synchronized
 from deep_sort_pytorch.utils.parser import get_config
 from deep_sort_pytorch.deep_sort import DeepSort
 from iou.iou_tracker import IOUTracker
+from iou_kf.iou_kf_tracker import IOUKFTracker
 import argparse
 import os
 import platform
@@ -157,6 +158,17 @@ def detect(cfg, save_img=False):
                     ],
                     max_age=cfg[constants.IOU][constants.MAX_AGE],
                     n_init=cfg[constants.IOU][constants.N_INIT],
+                )
+            elif cfg[constants.TRACKER] == constants.IOU_KF:
+                # initialize iou_kf
+                tracker = IOUKFTracker(
+                    min_confidence=cfg[constants.IOU_KF][constants.MIN_CONFIDENCE],
+                    nms_max_overlap=cfg[constants.IOU_KF][constants.NMS_MAX_OVERLAP],
+                    max_iou_distance=cfg[constants.IOU_KF][
+                        constants.MAX_IOU_DISTANCE
+                    ],
+                    max_age=cfg[constants.IOU_KF][constants.MAX_AGE],
+                    n_init=cfg[constants.IOU_KF][constants.N_INIT],
                 )
 
         img = torch.from_numpy(img).to(device)
