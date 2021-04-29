@@ -24,3 +24,4 @@ N_INIT = "n_init"
 NN_BUDGET = "nn_budget"
 
 DEEP_SORT = "deep_sort"
+IOU = "iou"

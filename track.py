@@ -7,6 +7,7 @@ from yolov5.utils.general import check_img_size, non_max_suppression, scale_coor
 from yolov5.utils.torch_utils import select_device, time_synchronized
 from deep_sort_pytorch.utils.parser import get_config
 from deep_sort_pytorch.deep_sort import DeepSort
+from iou.iou_tracker import IOUTracker
 import argparse
 import os
 import platform
@@ -134,16 +135,28 @@ def detect(cfg, save_img=False):
             seen_videos[path] = True
             if cfg[constants.TRACKER] == constants.DEEP_SORT:
                 # initialize deepsort
-                deepsort = DeepSort(
+                tracker = DeepSort(
                     cfg[constants.DEEP_SORT][constants.REID_CKPT],
                     max_dist=cfg[constants.DEEP_SORT][constants.MAX_DIST],
                     min_confidence=cfg[constants.DEEP_SORT][constants.MIN_CONFIDENCE],
                     nms_max_overlap=cfg[constants.DEEP_SORT][constants.NMS_MAX_OVERLAP],
-                    max_iou_distance=cfg[constants.DEEP_SORT][constants.MAX_IOU_DISTANCE],
+                    max_iou_distance=cfg[constants.DEEP_SORT][
+                        constants.MAX_IOU_DISTANCE
+                    ],
                     max_age=cfg[constants.DEEP_SORT][constants.MAX_AGE],
                     n_init=cfg[constants.DEEP_SORT][constants.N_INIT],
                     nn_budget=cfg[constants.DEEP_SORT][constants.NN_BUDGET],
                     use_cuda=True,
+                )
+            elif cfg[constants.TRACKER] == constants.IOU:
+                # initialize iou
+                tracker = IOUTracker(
+                    min_confidence=cfg[constants.IOU][constants.MIN_CONFIDENCE],
+                    max_iou_distance=cfg[constants.IOU][
+                        constants.MAX_IOU_DISTANCE
+                    ],
+                    max_age=cfg[constants.IOU][constants.MAX_AGE],
+                    n_init=cfg[constants.IOU][constants.N_INIT],
                 )
 
         img = torch.from_numpy(img).to(device)
@@ -198,8 +211,8 @@ def detect(cfg, save_img=False):
                 xywhs = torch.Tensor(bbox_xywh)
                 confss = torch.Tensor(confs)
 
-                # Pass detections to deepsort
-                outputs = deepsort.update(xywhs, confss, im0)
+                # Pass detections to deepsort/iou/viou tracker
+                outputs = tracker.update(xywhs, confss, im0)
 
                 # draw boxes for visualization
                 if len(outputs) > 0:
@@ -233,7 +246,7 @@ def detect(cfg, save_img=False):
                             )  # label format
 
             else:
-                deepsort.increment_ages()
+                tracker.increment_ages()
 
             # Print time (inference + NMS)
             print("%sDone. (%.3fs)" % (s, t2 - t1))
@@ -258,11 +271,14 @@ def detect(cfg, save_img=False):
                             vid_writer.release()  # release previous video writer
 
                         # fps = vid_cap.get(cv2.CAP_PROP_FPS)
-                        fps = 1
+                        fps = cfg[constants.FPS]
                         w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                         h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                         vid_writer = cv2.VideoWriter(
-                            save_path, cv2.VideoWriter_fourcc(*cfg[constants.FOURCC]), fps, (w, h)
+                            save_path,
+                            cv2.VideoWriter_fourcc(*cfg[constants.FOURCC]),
+                            fps,
+                            (w, h),
                         )
                     vid_writer.write(im0)
 

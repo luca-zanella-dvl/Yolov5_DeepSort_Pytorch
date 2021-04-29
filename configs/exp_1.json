@@ -1,0 +1,24 @@
+{
+    "tracker": "iou",
+    "source": "/media/zanella/mt",
+    "output": "inference/output",
+    "exp_id": "1",
+    "weights": "yolov5/weights/yolov5l.pt",
+    "image_size": 640,
+    "conf_thres": 0.4,
+    "iou-thres": 0.5,
+    "fps": 1,
+    "fourcc": "mp4v",
+    "device": "0",
+    "view_img": false,
+    "save_txt": true,
+    "classes": [0],
+    "agnostic-nms": true,
+    "augment": true,
+    "iou": {
+        "min_confidence": 0.3,
+        "max_iou_distance": 0.7,
+        "max_age": 70,
+        "n_init": 3
+    }
+}
