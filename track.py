@@ -5,7 +5,7 @@ sys.path.insert(0, "./yolov5")
 from yolov5.utils.datasets import LoadImages, LoadStreams
 from yolov5.utils.general import check_img_size, non_max_suppression, scale_coords
 from yolov5.utils.torch_utils import select_device, time_synchronized
-from deep_sort_pytorch.utils.parser import get_config
+from helpers.parser import get_config
 from deep_sort_pytorch.deep_sort import DeepSort
 from iou.iou_tracker import IOUTracker
 from iou_kf.iou_kf_tracker import IOUKFTracker
@@ -20,6 +20,7 @@ import torch
 import torch.backends.cudnn as cudnn
 import json
 import constants
+import csv
 
 
 palette = (2 ** 11 - 1, 2 ** 15 - 1, 2 ** 20 - 1)
@@ -76,12 +77,12 @@ def draw_boxes(img, bbox, identities=None, offset=(0, 0)):
 
 def detect(cfg, save_img=False):
     out, source, weights, view_img, save_txt, imgsz = (
-        cfg[constants.OUTPUT],
-        cfg[constants.SOURCE],
-        cfg[constants.WEIGHTS],
-        cfg[constants.VIEW_IMG],
-        cfg[constants.SAVE_TXT],
-        cfg[constants.IMAGE_SIZE],
+        cfg.OUTPUT,
+        cfg.SOURCE,
+        cfg.WEIGHTS,
+        cfg.VIEW_IMG,
+        cfg.SAVE_TXT,
+        cfg.IMAGE_SIZE
     )
     webcam = (
         source == "0"
@@ -91,13 +92,15 @@ def detect(cfg, save_img=False):
     )
 
     # Initialize
-    device = select_device(cfg[constants.DEVICE])
+    device = select_device(cfg.DEVICE)
 
-    exp_id = cfg[constants.EXP_ID]
+    # Create output folder
+    exp_id = cfg.EXP_ID
     out = os.path.join(out, "exp_" + exp_id)
     if os.path.exists(out):
         shutil.rmtree(out)  # delete output folder
     os.makedirs(out)  # make new output folder
+    
     half = device.type != "cpu"  # half precision only supported on CUDA
 
     # Load model
@@ -129,46 +132,40 @@ def detect(cfg, save_img=False):
     save_path = str(Path(out))
     txt_path = str(Path(out)) + "/results.txt"
 
-    seen_videos = {}
+    seen_vid_paths = {}
 
     for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
-        if path not in seen_videos:
-            seen_videos[path] = True
-            if cfg[constants.TRACKER] == constants.DEEP_SORT:
+        if path not in seen_vid_paths:
+            seen_vid_paths[path] = True
+            if cfg.TRACKER == constants.DEEP_SORT:
                 # initialize deepsort
                 tracker = DeepSort(
-                    cfg[constants.DEEP_SORT][constants.REID_CKPT],
-                    max_dist=cfg[constants.DEEP_SORT][constants.MAX_DIST],
-                    min_confidence=cfg[constants.DEEP_SORT][constants.MIN_CONFIDENCE],
-                    nms_max_overlap=cfg[constants.DEEP_SORT][constants.NMS_MAX_OVERLAP],
-                    max_iou_distance=cfg[constants.DEEP_SORT][
-                        constants.MAX_IOU_DISTANCE
-                    ],
-                    max_age=cfg[constants.DEEP_SORT][constants.MAX_AGE],
-                    n_init=cfg[constants.DEEP_SORT][constants.N_INIT],
-                    nn_budget=cfg[constants.DEEP_SORT][constants.NN_BUDGET],
+                    cfg.DEEP_SORT.REID_CKPT,
+                    max_dist=cfg.DEEP_SORT.MAX_DIST,
+                    min_confidence=cfg.DEEP_SORT.MIN_CONFIDENCE,
+                    nms_max_overlap=cfg.DEEP_SORT.NMS_MAX_OVERLAP,
+                    max_iou_distance=cfg.DEEP_SORT.MAX_IOU_DISTANCE,
+                    max_age=cfg.DEEP_SORT.MAX_AGE,
+                    n_init=cfg.DEEP_SORT.N_INIT,
+                    nn_budget=cfg.DEEP_SORT.NN_BUDGET,
                     use_cuda=True,
                 )
-            elif cfg[constants.TRACKER] == constants.IOU:
+            elif cfg.TRACKER == constants.IOU:
                 # initialize iou
                 tracker = IOUTracker(
-                    min_confidence=cfg[constants.IOU][constants.MIN_CONFIDENCE],
-                    max_iou_distance=cfg[constants.IOU][
-                        constants.MAX_IOU_DISTANCE
-                    ],
-                    max_age=cfg[constants.IOU][constants.MAX_AGE],
-                    n_init=cfg[constants.IOU][constants.N_INIT],
+                    min_confidence=cfg.IOU.MIN_CONFIDENCE,
+                    max_iou_distance=cfg.IOU.MAX_IOU_DISTANCE,
+                    max_age=cfg.IOU.MAX_AGE,
+                    n_init=cfg.IOU.N_INIT,
                 )
-            elif cfg[constants.TRACKER] == constants.IOU_KF:
+            elif cfg.TRACKER == constants.IOU_KF:
                 # initialize iou_kf
                 tracker = IOUKFTracker(
-                    min_confidence=cfg[constants.IOU_KF][constants.MIN_CONFIDENCE],
-                    nms_max_overlap=cfg[constants.IOU_KF][constants.NMS_MAX_OVERLAP],
-                    max_iou_distance=cfg[constants.IOU_KF][
-                        constants.MAX_IOU_DISTANCE
-                    ],
-                    max_age=cfg[constants.IOU_KF][constants.MAX_AGE],
-                    n_init=cfg[constants.IOU_KF][constants.N_INIT],
+                    min_confidence=cfg.IOU_KF.MIN_CONFIDENCE,
+                    nms_max_overlap=cfg.IOU_KF.NMS_MAX_OVERLAP,
+                    max_iou_distance=cfg.IOU_KF.MAX_IOU_DISTANCE,
+                    max_age=cfg.IOU_KF.MAX_AGE,
+                    n_init=cfg.IOU_KF.N_INIT,
                 )
 
         img = torch.from_numpy(img).to(device)
@@ -179,15 +176,15 @@ def detect(cfg, save_img=False):
 
         # Inference
         t1 = time_synchronized()
-        pred = model(img, augment=cfg[constants.AUGMENT])[0]
+        pred = model(img, augment=cfg.AUGMENT)[0]
 
         # Apply NMS
         pred = non_max_suppression(
             pred,
-            cfg[constants.CONF_THRES],
-            cfg[constants.IOU_THRES],
-            classes=cfg[constants.CLASSES],
-            agnostic=cfg[constants.AGNOSTIC_NMS],
+            cfg.CONF_THRES,
+            cfg.IOU_THRES,
+            classes=cfg.CLASSES,
+            agnostic=cfg.AGNOSTIC_NMS,
         )
         t2 = time_synchronized()
 
@@ -234,29 +231,44 @@ def detect(cfg, save_img=False):
 
                 # Write MOT compliant results to file
                 if save_txt and len(outputs) != 0:
-                    for j, output in enumerate(outputs):
-                        bbox_left = output[0]
-                        bbox_top = output[1]
-                        bbox_w = output[2]
-                        bbox_h = output[3]
-                        identity = output[-1]
-                        with open(txt_path, "a") as f:
-                            f.write(
-                                ("%g " * 10 + "\n")
-                                % (
-                                    frame_idx,
-                                    identity,
-                                    bbox_left,
-                                    bbox_top,
-                                    bbox_w,
-                                    bbox_h,
-                                    -1,
-                                    -1,
-                                    -1,
-                                    -1,
-                                )
-                            )  # label format
+                    fieldnames = [
+                        "frame",
+                        "id",
+                        "bb_left",
+                        "bb_top",
+                        "bb_width",
+                        "bb_height",
+                        "conf",
+                        "x",
+                        "y",
+                        "z",
+                    ]
 
+                    with open(txt_path, "a") as csv_file:
+                        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+
+                        for j, output in enumerate(outputs):
+                            bbox_left = output[0]
+                            bbox_top = output[1]
+                            bbox_right = output[2]
+                            bbox_bottom = output[3]
+                            bbox_w = bbox_right - bbox_left
+                            bbox_h = bbox_bottom - bbox_top
+                            identity = output[-1]
+                            conf = -1
+
+                            writer.writerow({
+                                "frame": frame_idx,
+                                "id": identity,
+                                "bb_left": float(bbox_left),
+                                "bb_top": float(bbox_top),
+                                "bb_width": float(bbox_w),
+                                "bb_height": float(bbox_h),
+                                "conf": conf,
+                                "x": -1,
+                                "y": -1,
+                                "z": -1,
+                            })
             else:
                 tracker.increment_ages()
 
@@ -264,7 +276,7 @@ def detect(cfg, save_img=False):
             print("%sDone. (%.3fs)" % (s, t2 - t1))
 
             # Stream results
-            view_img = False
+            view_img = cfg.VIEW_IMG
             if view_img:
                 cv2.imshow(p, im0)
                 if cv2.waitKey(1) == ord("q"):  # q to quit
@@ -283,12 +295,12 @@ def detect(cfg, save_img=False):
                             vid_writer.release()  # release previous video writer
 
                         # fps = vid_cap.get(cv2.CAP_PROP_FPS)
-                        fps = cfg[constants.FPS]
+                        fps = cfg.FPS
                         w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                         h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                         vid_writer = cv2.VideoWriter(
                             save_path,
-                            cv2.VideoWriter_fourcc(*cfg[constants.FOURCC]),
+                            cv2.VideoWriter_fourcc(*cfg.FOURCC),
                             fps,
                             (w, h),
                         )
@@ -302,16 +314,17 @@ def detect(cfg, save_img=False):
     print("Done. (%.3fs)" % (time.time() - t0))
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, required=True)
-    args = parser.parse_args()
-
-    with open(args.config, "r") as f:
-        cfg = json.load(f)
-
-    cfg[constants.IMAGE_SIZE] = check_img_size(cfg[constants.IMAGE_SIZE])
+def main(config):
+    cfg = get_config(config)
+    cfg.IMAGE_SIZE = check_img_size(cfg.IMAGE_SIZE)
     print(cfg)
 
     with torch.no_grad():
         detect(cfg)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=Path, required=True)
+    args = parser.parse_args()
+    main(args.config)

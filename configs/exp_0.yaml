@@ -1,0 +1,25 @@
+TRACKER: "deep_sort"
+SOURCE: "/media/zanella/mt/mp4/"
+OUTPUT: "inference/output"
+EXP_ID: "0"
+WEIGHTS: "yolov5/weights/yolov5l.pt"
+IMAGE_SIZE: 640
+CONF_THRES: 0.4
+IOU-THRES: 0.5
+FPS: 1
+FOURCC: "mp4v"
+DEVICE: "0"
+VIEW_IMG: false
+SAVE_TXT: true
+CLASSES: [0]
+AGNOSTIC-NMS: true
+AUGMENT: true
+DEEPSORT:
+  REID_CKPT: "deep_sort_pytorch/deep_sort/deep/checkpoint/ckpt.t7"
+  MAX_DIST: 0.2
+  MIN_CONFIDENCE: 0.3
+  NMS_MAX_OVERLAP: 0.5
+  MAX_IOU_DISTANCE: 0.7
+  MAX_AGE: 70
+  N_INIT: 3
+  NN_BUDGET: 100
