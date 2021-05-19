@@ -178,4 +178,7 @@ Thumbs.db
 
 # End of https://www.toptal.com/developers/gitignore/api/linux,visualstudiocode,python
 
+# Manually added
 inference/
+.vscode/
+groundtruths/
