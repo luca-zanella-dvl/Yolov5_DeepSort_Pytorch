@@ -8,7 +8,8 @@ from yolov5.utils.torch_utils import select_device, time_synchronized
 from helpers.parser import get_config
 from deep_sort_pytorch.deep_sort import DeepSort
 from iou.iou_tracker import IOUTracker
-from iou_kf.iou_kf_tracker import IOUKFTracker
+# from iou_kf.iou_kf_tracker import IOUKFTracker
+from sort.sort import Sort
 import argparse
 import os
 import platform
@@ -25,6 +26,19 @@ import csv
 
 palette = (2 ** 11 - 1, 2 ** 15 - 1, 2 ** 20 - 1)
 
+
+def xyxy_to_tlwh(bbox_xyxy):
+    tlwh_bboxs = []
+    for box in bbox_xyxy:
+        x1, y1, x2, y2 = [int(i) for i in box]
+        top = y1
+        left = x1
+        w = int(x2 - x1)
+        h = int(y2 - y1)
+        tlwh_obj = [left, top, w, h]
+        tlwh_bboxs.append(tlwh_obj)
+    return tlwh_bboxs
+    
 
 def bbox_rel(*xyxy):
     """ " Calculates the relative bounding box from absolute pixel values."""
@@ -151,21 +165,19 @@ def detect(cfg, save_img=False):
                     use_cuda=True,
                 )
             elif cfg.TRACKER == constants.IOU:
+                sigma_iou = 1 - cfg.IOU.MAX_IOU_DISTANCE
                 # initialize iou
                 tracker = IOUTracker(
-                    min_confidence=cfg.IOU.MIN_CONFIDENCE,
-                    max_iou_distance=cfg.IOU.MAX_IOU_DISTANCE,
-                    max_age=cfg.IOU.MAX_AGE,
-                    n_init=cfg.IOU.N_INIT,
+                    sigma_l=cfg.IOU.MIN_CONFIDENCE,
+                    sigma_iou=sigma_iou,
                 )
-            elif cfg.TRACKER == constants.IOU_KF:
-                # initialize iou_kf
-                tracker = IOUKFTracker(
-                    min_confidence=cfg.IOU_KF.MIN_CONFIDENCE,
-                    nms_max_overlap=cfg.IOU_KF.NMS_MAX_OVERLAP,
-                    max_iou_distance=cfg.IOU_KF.MAX_IOU_DISTANCE,
-                    max_age=cfg.IOU_KF.MAX_AGE,
-                    n_init=cfg.IOU_KF.N_INIT,
+            elif cfg.TRACKER == constants.SORT:
+                # initialize sort
+                tracker = Sort(
+                    min_confidence=cfg.SORT.MIN_CONFIDENCE,
+                    max_iou_distance=cfg.SORT.MAX_IOU_DISTANCE,
+                    max_age=cfg.SORT.MAX_AGE,
+                    n_init=cfg.SORT.N_INIT,
                 )
 
         img = torch.from_numpy(img).to(device)
@@ -220,7 +232,7 @@ def detect(cfg, save_img=False):
                 xywhs = torch.Tensor(bbox_xywh)
                 confss = torch.Tensor(confs)
 
-                # Pass detections to deepsort/iou/viou tracker
+                # Pass detections to iou/sort/deepsort tracker
                 outputs = tracker.update(xywhs, confss, im0)
 
                 # draw boxes for visualization
@@ -228,47 +240,44 @@ def detect(cfg, save_img=False):
                     bbox_xyxy = outputs[:, :4]
                     identities = outputs[:, -1]
                     draw_boxes(im0, bbox_xyxy, identities)
+                    # to MOT format
+                    tlwh_bboxs = xyxy_to_tlwh(bbox_xyxy)
 
-                # Write MOT compliant results to file
-                if save_txt and len(outputs) != 0:
-                    fieldnames = [
-                        "frame",
-                        "id",
-                        "bb_left",
-                        "bb_top",
-                        "bb_width",
-                        "bb_height",
-                        "conf",
-                        "x",
-                        "y",
-                        "z",
-                    ]
+                    # Write MOT compliant results to file
+                    if save_txt:
+                        fieldnames = [
+                            "frame",
+                            "id",
+                            "bb_left",
+                            "bb_top",
+                            "bb_width",
+                            "bb_height",
+                            "conf",
+                            "x",
+                            "y",
+                            "z",
+                        ]
 
-                    with open(txt_path, "a") as csv_file:
-                        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
-
-                        for j, output in enumerate(outputs):
-                            bbox_left = output[0]
-                            bbox_top = output[1]
-                            bbox_right = output[2]
-                            bbox_bottom = output[3]
-                            bbox_w = bbox_right - bbox_left
-                            bbox_h = bbox_bottom - bbox_top
+                        for j, (tlwh_bbox, output) in enumerate(zip(tlwh_bboxs, outputs)):
+                            bbox_left = tlwh_bbox[0]
+                            bbox_top = tlwh_bbox[1]
+                            bbox_w = tlwh_bbox[2]
+                            bbox_h = tlwh_bbox[3]
                             identity = output[-1]
-                            conf = -1
-
-                            writer.writerow({
-                                "frame": frame_idx,
-                                "id": identity,
-                                "bb_left": float(bbox_left),
-                                "bb_top": float(bbox_top),
-                                "bb_width": float(bbox_w),
-                                "bb_height": float(bbox_h),
-                                "conf": conf,
-                                "x": -1,
-                                "y": -1,
-                                "z": -1,
-                            })
+                            with open(txt_path, 'a') as csv_file:
+                                writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+                                writer.writerow({
+                                    "frame": frame_idx + 1,
+                                    "id": identity,
+                                    "bb_left": float(bbox_left),
+                                    "bb_top": float(bbox_top),
+                                    "bb_width": float(bbox_w),
+                                    "bb_height": float(bbox_h),
+                                    "conf": -1,
+                                    "x": -1,
+                                    "y": -1,
+                                    "z": -1,
+                                })
             else:
                 tracker.increment_ages()
 
