@@ -182,3 +182,6 @@ Thumbs.db
 inference/
 .vscode/
 groundtruths/
+configs/
+deepsort-reid-kf/
+deepsort-reid/
